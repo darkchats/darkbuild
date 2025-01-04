@@ -1,6 +1,6 @@
 [project]
 name = "funbuild"
-version = "1.5.56"
+version = "1.5.57"
 description = "funbuild"
 readme = "README.md"
 requires-python = ">=3.8"
