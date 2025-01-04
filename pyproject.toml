@@ -1,10 +1,10 @@
 [project]
 name = "funbuild"
-version = "1.5.58"
+version = "1.5.59"
 description = "funbuild"
 readme = "README.md"
 requires-python = ">=3.8"
-dependencies = [ "ruff>=0.8.0", "toml>=0.10.2", "uv>=0.5.5",]
+dependencies = [ "click>=8.1.8", "ruff>=0.8.6", "toml>=0.10.2", "uv>=0.5.14",]
 keywords = [ "build", "requirements", "packaging", "uv",]
 [[project.authors]]
 name = "niuliangtao"
