@@ -1,14 +1,17 @@
 #!/usr/bin/python3
 
 
+from __future__ import annotations
+
+import argparse
 import os
 from configparser import ConfigParser
 from typing import List
 
-import click
 import toml
-from funbuild.shell import run_shell, run_shell_list
 from funutil import getLogger
+
+from funbuild.shell import run_shell, run_shell_list
 
 logger = getLogger("funbuild")
 
@@ -61,33 +64,33 @@ class BaseBuild:
     def _cmd_delete(self) -> List[str]:
         return ["rm -rf dist", "rm -rf build", "rm -rf *.egg-info"]
 
-    def upgrade(self, *args, **kwargs):
+    def funbuild_upgrade(self, args=None, **kwargs):
         self.version = self.__version_upgrade()
         self._write_version()
 
-    def pull(self, *args, **kwargs):
+    def funbuild_pull(self, args=None, **kwargs):
         logger.info(f"{self.name} pull")
         run_shell_list(["git pull"])
 
-    def push(self, message="add", *args, **kwargs):
+    def funbuild_push(self, args=None, **kwargs):
         logger.info(f"{self.name} push")
-        run_shell_list(["git add -A", f'git commit -a -m "{message}"', "git push"])
+        run_shell_list(["git add -A", 'git commit -a -m "add"', "git push"])
 
-    def install(self, *args, **kwargs):
+    def funbuild_install(self, args=None, **kwargs):
         logger.info(f"{self.name} install")
         run_shell_list(self._cmd_build() + self._cmd_install() + self._cmd_delete())
 
-    def build(self, message="add", *args, **kwargs):
+    def funbuild_build(self, args=None, **kwargs):
         logger.info(f"{self.name} build")
-        self.pull()
-        self.upgrade()
+        self.funbuild_pull()
+        self.funbuild_upgrade()
         run_shell_list(
             self._cmd_delete() + self._cmd_build() + self._cmd_install() + self._cmd_publish() + self._cmd_delete()
         )
-        self.push(message=message)
-        self.tags()
+        self.funbuild_push()
+        self.git_tags()
 
-    def clean_history(self, *args, **kwargs):
+    def funbuild_clean_history(self, args=None, **kwargs):
         logger.info(f"{self.name} clean history")
         run_shell_list(
             [
@@ -106,7 +109,7 @@ class BaseBuild:
             ]
         )
 
-    def clean(self, *args, **kwargs):
+    def git_clean(self, args=None, **kwargs):
         logger.info(f"{self.name} clean")
         run_shell_list(
             [
@@ -117,7 +120,7 @@ class BaseBuild:
             ]
         )
 
-    def tags(self, *args, **kwargs):
+    def git_tags(self, args=None, **kwargs):
         run_shell_list(
             [
                 f"git tag v{self.version}",
@@ -267,44 +270,45 @@ def get_build() -> BaseBuild:
 
 def funbuild():
     builder = get_build()
+    if builder is None:
+        raise Exception("build error")
 
-    @click.group()
-    def cli():
-        pass
+    parser = argparse.ArgumentParser(prog="PROG")
+    subparsers = parser.add_subparsers(help="sub-command help")
 
-    @cli.command()
-    def upgrade(*args, **kwargs):
-        builder.upgrade(*args, **kwargs)
+    # 添加子命令
+    build_parser = subparsers.add_parser("upgrade", help="build package")
+    build_parser.set_defaults(func=builder.funbuild_upgrade)  # 设置默认函数
 
-    @cli.command()
-    def pull(*args, **kwargs):
-        builder.pull(*args, **kwargs)
+    # 添加子命令
+    build_parser = subparsers.add_parser("build", help="build package")
+    build_parser.set_defaults(func=builder.funbuild_build)  # 设置默认函数
 
-    @cli.command()
-    @click.option("--message", type=str, default="add", help="commit message")
-    @click.option("--name", type=str, default="fun", help="build name")
-    def push(message: str = "add", *args, **kwargs):
-        builder.push(message, *args, **kwargs)
+    # 添加子命令
+    clean_history_parser = subparsers.add_parser("clean_history", help="clean history")
+    clean_history_parser.set_defaults(func=builder.funbuild_clean_history)  # 设置默认函数
 
-    @cli.command()
-    def install(*args, **kwargs):
-        builder.install(*args, **kwargs)
+    # 添加子命令
+    pull_parser = subparsers.add_parser("pull", help="git pull")
+    pull_parser.add_argument("--quiet", default=True, help="quiet")
+    pull_parser.set_defaults(func=builder.funbuild_pull)  # 设置默认函数
 
-    @cli.command()
-    @click.option("--message", type=str, default="add", help="commit message")
-    def build(*args, **kwargs):
-        builder.build(*args, **kwargs)
+    # 添加子命令
+    push_parser = subparsers.add_parser("push", help="git push")
+    push_parser.add_argument("--quiet", default=True, help="quiet")
+    push_parser.set_defaults(func=builder.funbuild_push)  # 设置默认函数
 
-    @cli.command()
-    def clean_history(*args, **kwargs):
-        builder.clean_history(*args, **kwargs)
+    # 添加子命令
+    install_parser = subparsers.add_parser("install", help="install package")
+    install_parser.set_defaults(func=builder.funbuild_install)  # 设置默认函数
 
-    @cli.command()
-    def clean(*args, **kwargs):
-        builder.clean(*args, **kwargs)
+    # 添加子命令
+    clear_parser = subparsers.add_parser("clear", help="clear")
+    clear_parser.set_defaults(func=builder.git_clean)  # 设置默认函数
 
-    @cli.command()
-    def tags(*args, **kwargs):
-        builder.tags(*args, **kwargs)
+    # 添加子命令
+    tag_parser = subparsers.add_parser("tag", help="git build tag")
+    tag_parser.set_defaults(func=builder.git_tags)  # 设置默认函数
 
-    cli()
+    args = parser.parse_args()
+    args.func(args)
