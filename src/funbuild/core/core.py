@@ -1,19 +1,21 @@
 #!/usr/bin/python3
 
-
+# 导入所需的模块
 import os
 from configparser import ConfigParser
 from typing import List
 
 import click
 import toml
-from funbuild.shell import run_shell, run_shell_list
 from funutil import getLogger
+
+from funbuild.shell import run_shell, run_shell_list
 
 logger = getLogger("funbuild")
 
 
 def deep_create(data, *args, key, value):
+    """递归创建嵌套字典"""
     res = data
     for arg in args:
         if arg not in data:
@@ -24,18 +26,25 @@ def deep_create(data, *args, key, value):
 
 
 class BaseBuild:
+    """构建工具的基类"""
+
     def __init__(self, name=None):
+        # 获取git仓库根目录路径
         self.repo_path = run_shell("git rev-parse --show-toplevel", printf=False)
+        # 设置项目名称,默认为仓库名
         self.name = name or self.repo_path.split("/")[-1]
         self.version = None
 
     def check_type(self) -> bool:
+        """检查是否为当前构建类型"""
         raise NotImplementedError
 
     def _write_version(self):
+        """写入版本号"""
         raise NotImplementedError
 
     def __version_upgrade(self, step=128):
+        """版本号自增"""
         version = self.version
         if version is None:
             version = "0.0.1"
@@ -50,34 +59,43 @@ class BaseBuild:
         return "{}.{}.{}".format(*version1)
 
     def _cmd_build(self) -> List[str]:
+        """构建命令"""
         return []
 
     def _cmd_publish(self) -> List[str]:
+        """发布命令"""
         return []
 
     def _cmd_install(self) -> List[str]:
+        """安装命令"""
         return ["pip install dist/*.whl"]
 
     def _cmd_delete(self) -> List[str]:
+        """清理命令"""
         return ["rm -rf dist", "rm -rf build", "rm -rf *.egg-info"]
 
     def upgrade(self, *args, **kwargs):
+        """升级版本"""
         self.version = self.__version_upgrade()
         self._write_version()
 
     def pull(self, *args, **kwargs):
+        """拉取代码"""
         logger.info(f"{self.name} pull")
         run_shell_list(["git pull"])
 
     def push(self, message="add", *args, **kwargs):
+        """推送代码"""
         logger.info(f"{self.name} push")
         run_shell_list(["git add -A", f'git commit -a -m "{message}"', "git push"])
 
     def install(self, *args, **kwargs):
+        """安装包"""
         logger.info(f"{self.name} install")
         run_shell_list(self._cmd_build() + self._cmd_install() + self._cmd_delete())
 
     def build(self, message="add", *args, **kwargs):
+        """构建发布流程"""
         logger.info(f"{self.name} build")
         self.pull()
         self.upgrade()
@@ -88,6 +106,7 @@ class BaseBuild:
         self.tags()
 
     def clean_history(self, *args, **kwargs):
+        """清理git历史记录"""
         logger.info(f"{self.name} clean history")
         run_shell_list(
             [
@@ -107,6 +126,7 @@ class BaseBuild:
         )
 
     def clean(self, *args, **kwargs):
+        """清理git缓存"""
         logger.info(f"{self.name} clean")
         run_shell_list(
             [
@@ -118,6 +138,7 @@ class BaseBuild:
         )
 
     def tags(self, *args, **kwargs):
+        """创建版本标签"""
         run_shell_list(
             [
                 f"git tag v{self.version}",
@@ -127,35 +148,44 @@ class BaseBuild:
 
 
 class PypiBuild(BaseBuild):
+    """PyPI构建类"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.version_path = "./script/__version__.md"
 
     def check_type(self):
+        """检查是否为PyPI项目"""
         if os.path.exists(self.version_path):
             self.version = open(self.version_path, "r").read()  # noqa: UP015
             return True
         return False
 
     def _write_version(self):
+        """写入版本号到文件"""
         with open(self.version_path, "w") as f:
             f.write(self.version)
 
     def _cmd_build(self) -> List[str]:
+        """构建命令"""
         return []
 
     def _cmd_install(self) -> List[str]:
+        """安装命令"""
         return [
             "pip install dist/*.whl",
         ]
 
 
 class PoetryBuild(BaseBuild):
+    """Poetry构建类"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.toml_path = "./pyproject.toml"
 
     def check_type(self) -> bool:
+        """检查是否为Poetry项目"""
         if os.path.exists(self.toml_path):
             a = toml.load(self.toml_path)
             if "tool" in a:
@@ -164,23 +194,29 @@ class PoetryBuild(BaseBuild):
         return False
 
     def _write_version(self):
+        """写入版本号到pyproject.toml"""
         a = toml.load(self.toml_path)
         a["tool"]["poetry"]["version"] = self.version
         with open(self.toml_path, "w") as f:
             toml.dump(a, f)
 
     def _cmd_publish(self) -> List[str]:
+        """发布命令"""
         return ["poetry publish"]
 
     def _cmd_build(self) -> List[str]:
+        """构建命令"""
         return ["poetry lock", "poetry build"]
 
 
 class UVBuild(BaseBuild):
+    """UV构建类"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.toml_paths = ["./pyproject.toml"]
 
+        # 扫描extbuild和exts目录下的pyproject.toml
         for root in ("extbuild", "exts"):
             if os.path.isdir(root):
                 for file in os.listdir(root):
@@ -191,6 +227,7 @@ class UVBuild(BaseBuild):
                             self.toml_paths.append(toml_path)
 
     def check_type(self) -> bool:
+        """检查是否为UV项目"""
         if os.path.exists(self.toml_paths[0]):
             a = toml.load(self.toml_paths[0])
             if "project" in a:
@@ -199,17 +236,20 @@ class UVBuild(BaseBuild):
         return False
 
     def _write_version(self):
+        """写入版本号到所有pyproject.toml"""
         for toml_path in self.toml_paths:
-            config = toml.load(toml_path)
             try:
+                config = toml.load(toml_path)
                 self.config_format(config)
+                config["project"]["version"] = self.version
+                with open(toml_path, "w") as f:
+                    toml.dump(config, f)
             except Exception as e:
-                logger.error(f"format error:{e}")
-            config["project"]["version"] = self.version
-            with open(toml_path, "w") as f:
-                toml.dump(config, f)
+                logger.error(f"Failed to update version in {toml_path}: {e}")
+                raise  # 重要错误应该向上传播
 
     def config_format(self, config):
+        """格式化配置文件"""
         if not self.name.startswith("fun"):
             return
         deep_create(config, "tool", "setuptools", key="license-files", value=[])
@@ -218,9 +258,11 @@ class UVBuild(BaseBuild):
             deep_create(config, "project", key="description", value=f"{self.name}")
 
     def _cmd_delete(self) -> List[str]:
+        """清理命令"""
         return [*super()._cmd_delete(), "rm -rf src/*.egg-info"]
 
     def _cmd_publish(self) -> List[str]:
+        """发布命令"""
         config = ConfigParser()
 
         config.read(f"{os.environ['HOME']}/.pypirc")
@@ -246,6 +288,7 @@ class UVBuild(BaseBuild):
         return [" ".join(a)]
 
     def _cmd_build(self) -> List[str]:
+        """构建命令"""
         result = ["uv lock"]
         if self.name.startswith("fun"):
             result.append("uv run ruff format")
@@ -254,10 +297,12 @@ class UVBuild(BaseBuild):
         return result
 
     def _cmd_install(self) -> List[str]:
+        """安装命令"""
         return ["uv pip install dist/*.whl"]
 
 
 def get_build() -> BaseBuild:
+    """获取合适的构建类"""
     builders = [UVBuild, PoetryBuild, PypiBuild]
     for builder in builders:
         build = builder()
@@ -266,6 +311,7 @@ def get_build() -> BaseBuild:
 
 
 def funbuild():
+    """主入口函数"""
     builder = get_build()
 
     @click.group()
@@ -274,37 +320,45 @@ def funbuild():
 
     @cli.command()
     def upgrade(*args, **kwargs):
+        """升级版本"""
         builder.upgrade(*args, **kwargs)
 
     @cli.command()
     def pull(*args, **kwargs):
+        """拉取代码"""
         builder.pull(*args, **kwargs)
 
     @cli.command()
     @click.option("--message", type=str, default="add", help="commit message")
     @click.option("--name", type=str, default="fun", help="build name")
     def push(message: str = "add", *args, **kwargs):
+        """推送代码"""
         builder.push(message, *args, **kwargs)
 
     @cli.command()
     def install(*args, **kwargs):
+        """安装包"""
         builder.install(*args, **kwargs)
 
     @cli.command()
     @click.option("--message", type=str, default="add", help="commit message")
     def build(*args, **kwargs):
+        """构建发布"""
         builder.build(*args, **kwargs)
 
     @cli.command()
     def clean_history(*args, **kwargs):
+        """清理历史"""
         builder.clean_history(*args, **kwargs)
 
     @cli.command()
     def clean(*args, **kwargs):
+        """清理缓存"""
         builder.clean(*args, **kwargs)
 
     @cli.command()
     def tags(*args, **kwargs):
+        """创建标签"""
         builder.tags(*args, **kwargs)
 
     cli()
